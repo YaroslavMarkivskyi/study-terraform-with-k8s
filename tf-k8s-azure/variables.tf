@@ -1,6 +1,6 @@
 variable "location" {
   type        = string
-  default     = "westeurope"
+  default     = "swedencentral"
   description = "Region where resources will be created"
 }
 
@@ -41,9 +41,9 @@ variable "internal_nodes" {
     disk = number
   }))
   default = {
-    "server" = { size = "Standard_B1ms", ip = "10.0.2.10", disk = 20 }
-    "node-0" = { size = "Standard_B1ms", ip = "10.0.2.11", disk = 20 }
-    "node-1" = { size = "Standard_B1ms", ip = "10.0.2.12", disk = 20 }
+    "server" = { size = "Standard_B1ms", ip = "10.0.2.10", disk = 30 }
+    "node-0" = { size = "Standard_B1ms", ip = "10.0.2.11", disk = 30 }
+    "node-1" = { size = "Standard_B1ms", ip = "10.0.2.12", disk = 30 }
   }
   description = "Configuration of internal cluster nodes with fixed IPs"
 }
