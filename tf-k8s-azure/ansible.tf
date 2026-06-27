@@ -76,3 +76,16 @@ resource "null_resource" "ansible_certs" {
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_certs.yml"
   }
 }
+
+resource "null_resource" "ansible_kubeconfigs" {
+  depends_on = [null_resource.ansible_certs]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_kubeconfigs.yml"
+  }
+}
