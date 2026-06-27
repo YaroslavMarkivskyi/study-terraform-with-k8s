@@ -1,0 +1,82 @@
+---
+- name: Generate and Distribute TLS Certificates
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+    certs:
+      - admin
+      - node-0
+      - node-1
+      - kube-proxy
+      - kube-scheduler
+      - kube-controller-manager
+      - kube-api-server
+      - service-accounts
+
+  tasks:
+    - name: Generate CA private key
+      command: openssl genrsa -out ca.key 4096
+      args:
+        chdir: "{{ k8s_dir }}"
+        creates: "{{ k8s_dir }}/ca.key"
+
+    - name: Generate CA certificate
+      command: >-
+        openssl req -x509 -new -sha512 -noenc
+        -key ca.key -days 3653
+        -config ca.conf
+        -out ca.crt
+      args:
+        chdir: "{{ k8s_dir }}"
+        creates: "{{ k8s_dir }}/ca.crt"
+
+    - name: Generate private key for each component
+      command: openssl genrsa -out "{{ item }}.key" 4096
+      args:
+        chdir: "{{ k8s_dir }}"
+        creates: "{{ k8s_dir }}/{{ item }}.key"
+      loop: "{{ certs }}"
+
+    - name: Generate CSR for each component
+      command: >-
+        openssl req -new -key {{ item }}.key -sha256
+        -config ca.conf -section {{ item }}
+        -out {{ item }}.csr
+      args:
+        chdir: "{{ k8s_dir }}"
+        creates: "{{ k8s_dir }}/{{ item }}.csr"
+      loop: "{{ certs }}"
+
+    - name: Sign certificate for each component
+      command: >-
+        openssl x509 -req -days 3653 -in {{ item }}.csr
+        -copy_extensions copyall
+        -sha256 -CA ca.crt -CAkey ca.key
+        -CAcreateserial
+        -out {{ item }}.crt
+      args:
+        chdir: "{{ k8s_dir }}"
+        creates: "{{ k8s_dir }}/{{ item }}.crt"
+      loop: "{{ certs }}"
+
+    - name: Distribute certificates to worker nodes
+      shell: |
+        ssh -o StrictHostKeyChecking=no root@{{ item }} mkdir -p /var/lib/kubelet/
+        scp -o StrictHostKeyChecking=no {{ k8s_dir }}/ca.crt root@{{ item }}:/var/lib/kubelet/
+        scp -o StrictHostKeyChecking=no {{ k8s_dir }}/{{ item }}.crt root@{{ item }}:/var/lib/kubelet/kubelet.crt
+        scp -o StrictHostKeyChecking=no {{ k8s_dir }}/{{ item }}.key root@{{ item }}:/var/lib/kubelet/kubelet.key
+      loop:
+        - node-0
+        - node-1
+
+    - name: Distribute certificates to server
+      shell: >-
+        scp -o StrictHostKeyChecking=no
+        {{ k8s_dir }}/ca.key
+        {{ k8s_dir }}/ca.crt
+        {{ k8s_dir }}/kube-api-server.key
+        {{ k8s_dir }}/kube-api-server.crt
+        {{ k8s_dir }}/service-accounts.key
+        {{ k8s_dir }}/service-accounts.crt
+        root@server:~/

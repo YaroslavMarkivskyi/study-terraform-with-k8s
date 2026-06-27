@@ -63,3 +63,16 @@ resource "null_resource" "ansible_nodes" {
     command     = "ansible-playbook -i ../ansible/hosts.ini --timeout 60 ../ansible/setup_nodes.yml"
   }
 }
+
+resource "null_resource" "ansible_certs" {
+  depends_on = [null_resource.ansible_nodes]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_certs.yml"
+  }
+}

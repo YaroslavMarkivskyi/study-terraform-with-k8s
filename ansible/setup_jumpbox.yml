@@ -5,7 +5,6 @@
   gather_facts: true
 
   vars:
-    # Актуальні версії бінарників K8s згідно з оригінальним гайдом
     k8s_version: "v1.30.0"
     etcd_version: "v3.5.13"
     containerd_version: "1.7.15"
@@ -47,12 +46,11 @@
       get_url:
         url: "{{ item }}"
         dest: /root/kubernetes-the-hard-way/downloads/
-        mode: '0755' # одразу даємо права на виконання
+        mode: '0755'
       loop:
-        # CFSSL (генерація сертифікатів)
         - "https://github.com/cloudflare/cfssl/releases/download/v{{ cfssl_version }}/cfssl_{{ cfssl_version }}_linux_amd64"
         - "https://github.com/cloudflare/cfssl/releases/download/v{{ cfssl_version }}/cfssljson_{{ cfssl_version }}_linux_amd64"
-        # Kubernetes Core
+
         - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-apiserver"
         - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-controller-manager"
         - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-scheduler"
