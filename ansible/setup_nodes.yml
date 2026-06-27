@@ -1,0 +1,63 @@
+---
+- name: Bootstrapping Kubernetes the Hard Way - Node Setup
+  hosts: nodes
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Enable root SSH access
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin yes'
+        state: present
+
+    - name: Ensure root .ssh directory exists
+      file:
+        path: /root/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: Copy azureuser authorized_keys to root
+      copy:
+        src: /home/{{ ansible_user }}/.ssh/authorized_keys
+        dest: /root/.ssh/authorized_keys
+        mode: '0600'
+        remote_src: yes
+
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Set FQDN hostname
+      hostname:
+        name: "{{ inventory_hostname }}.kubernetes.local"
+
+    - name: Update /etc/hosts with cluster nodes
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} Kubernetes The Hard Way"
+        block: "{{ nodes_hosts_block }}"
+      vars:
+        nodes_hosts_block: |
+          {% for host in groups['nodes'] | sort %}
+          {{ hostvars[host]['ansible_host'] }} {{ host }}.kubernetes.local {{ host }}
+          {% endfor %}
+
+- name: Update jumpbox /etc/hosts with cluster nodes
+  hosts: jumpbox
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Add cluster nodes to /etc/hosts
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} Kubernetes The Hard Way"
+        block: "{{ nodes_hosts_block }}"
+      vars:
+        nodes_hosts_block: |
+          {% for host in groups['nodes'] | sort %}
+          {{ hostvars[host]['ansible_host'] }} {{ host }}.kubernetes.local {{ host }}
+          {% endfor %}

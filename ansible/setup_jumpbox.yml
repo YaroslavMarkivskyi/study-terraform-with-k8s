@@ -93,3 +93,21 @@
       debug:
         msg: "{{ item.stdout_lines[0] if item.stdout_lines else item.stderr_lines[0] }}"
       loop: "{{ tools_version.results }}"
+
+    - name: Ensure root .ssh directory exists
+      file:
+        path: /root/.ssh
+        state: directory
+        mode: '0700'
+
+    - name: Copy SSH private key as root identity key
+      copy:
+        src: ../tf-k8s-azure/k8s_id_rsa
+        dest: /root/.ssh/id_rsa
+        mode: '0600'
+
+    - name: Copy machines.txt to kubernetes-the-hard-way
+      copy:
+        src: ../ansible/machines.txt
+        dest: /root/kubernetes-the-hard-way/machines.txt
+        mode: '0644'

@@ -36,14 +36,15 @@ variable "admin_username" {
 
 variable "internal_nodes" {
   type = map(object({
-    size = string
-    ip   = string
-    disk = number
+    size       = string
+    ip         = string
+    disk       = number
+    pod_subnet = optional(string, "")
   }))
   default = {
     "server" = { size = "Standard_B1ms", ip = "10.0.2.10", disk = 30 }
-    "node-0" = { size = "Standard_B1ms", ip = "10.0.2.11", disk = 30 }
-    "node-1" = { size = "Standard_B1ms", ip = "10.0.2.12", disk = 30 }
+    "node-0" = { size = "Standard_B1ms", ip = "10.0.2.11", disk = 30, pod_subnet = "10.200.0.0/24" }
+    "node-1" = { size = "Standard_B1ms", ip = "10.0.2.12", disk = 30, pod_subnet = "10.200.1.0/24" }
   }
   description = "Configuration of internal cluster nodes with fixed IPs"
 }
