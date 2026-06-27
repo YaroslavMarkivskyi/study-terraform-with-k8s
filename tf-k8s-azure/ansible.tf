@@ -89,3 +89,16 @@ resource "null_resource" "ansible_kubeconfigs" {
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_kubeconfigs.yml"
   }
 }
+
+resource "null_resource" "ansible_encryption" {
+  depends_on = [null_resource.ansible_kubeconfigs]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_encryption.yml"
+  }
+}

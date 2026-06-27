@@ -1,0 +1,17 @@
+---
+- name: Generate Data Encryption Config and Key
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+
+  tasks:
+    - name: Generate encryption key and config
+      shell: |
+        export ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)
+        envsubst < {{ k8s_dir }}/configs/encryption-config.yaml > {{ k8s_dir }}/encryption-config.yaml
+      args:
+        creates: "{{ k8s_dir }}/encryption-config.yaml"
+
+    - name: Copy encryption config to server
+      shell: scp -o StrictHostKeyChecking=no {{ k8s_dir }}/encryption-config.yaml root@server:~/
