@@ -1,0 +1,113 @@
+---
+- name: Copy control plane binaries and configs to server
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+
+  tasks:
+    - name: Copy binaries, unit files and configs to server
+      shell: |
+        scp -o StrictHostKeyChecking=no \
+          {{ k8s_dir }}/downloads/controller/kube-apiserver \
+          {{ k8s_dir }}/downloads/controller/kube-controller-manager \
+          {{ k8s_dir }}/downloads/controller/kube-scheduler \
+          {{ k8s_dir }}/downloads/client/kubectl \
+          {{ k8s_dir }}/units/kube-apiserver.service \
+          {{ k8s_dir }}/units/kube-controller-manager.service \
+          {{ k8s_dir }}/units/kube-scheduler.service \
+          {{ k8s_dir }}/configs/kube-scheduler.yaml \
+          {{ k8s_dir }}/configs/kube-apiserver-to-kubelet.yaml \
+          root@server:~/
+
+- name: Bootstrap Kubernetes Control Plane on server
+  hosts: server
+  become: true
+
+  tasks:
+    - name: Create Kubernetes config directory
+      file:
+        path: /etc/kubernetes/config
+        state: directory
+        mode: '0755'
+
+    - name: Install Kubernetes binaries
+      shell: mv /root/kube-apiserver /root/kube-controller-manager /root/kube-scheduler /root/kubectl /usr/local/bin/
+      args:
+        creates: /usr/local/bin/kube-apiserver
+
+    - name: Create /var/lib/kubernetes directory
+      file:
+        path: /var/lib/kubernetes
+        state: directory
+        mode: '0755'
+
+    - name: Move certificates and encryption config to /var/lib/kubernetes
+      shell: |
+        mv /root/ca.crt /root/ca.key \
+          /root/kube-api-server.key /root/kube-api-server.crt \
+          /root/service-accounts.key /root/service-accounts.crt \
+          /root/encryption-config.yaml \
+          /var/lib/kubernetes/
+      args:
+        creates: /var/lib/kubernetes/ca.crt
+
+    - name: Install kube-apiserver systemd unit
+      shell: mv /root/kube-apiserver.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/kube-apiserver.service
+
+    - name: Move kube-controller-manager kubeconfig into place
+      shell: mv /root/kube-controller-manager.kubeconfig /var/lib/kubernetes/
+      args:
+        creates: /var/lib/kubernetes/kube-controller-manager.kubeconfig
+
+    - name: Install kube-controller-manager systemd unit
+      shell: mv /root/kube-controller-manager.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/kube-controller-manager.service
+
+    - name: Move kube-scheduler kubeconfig into place
+      shell: mv /root/kube-scheduler.kubeconfig /var/lib/kubernetes/
+      args:
+        creates: /var/lib/kubernetes/kube-scheduler.kubeconfig
+
+    - name: Move kube-scheduler config into place
+      shell: mv /root/kube-scheduler.yaml /etc/kubernetes/config/
+      args:
+        creates: /etc/kubernetes/config/kube-scheduler.yaml
+
+    - name: Install kube-scheduler systemd unit
+      shell: mv /root/kube-scheduler.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/kube-scheduler.service
+
+    - name: Enable and start control plane services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      loop:
+        - kube-apiserver
+        - kube-controller-manager
+        - kube-scheduler
+
+    - name: Wait for kube-apiserver to initialize
+      wait_for:
+        port: 6443
+        delay: 5
+        timeout: 30
+
+    - name: Apply RBAC for kubelet authorization
+      command: kubectl apply -f /root/kube-apiserver-to-kubelet.yaml --kubeconfig /root/admin.kubeconfig
+      changed_when: true
+
+    - name: Verify cluster info
+      command: kubectl cluster-info --kubeconfig /root/admin.kubeconfig
+      register: cluster_info
+      changed_when: false
+
+    - name: Print cluster info
+      debug:
+        msg: "{{ cluster_info.stdout }}"

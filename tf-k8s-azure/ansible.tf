@@ -115,3 +115,16 @@ resource "null_resource" "ansible_etcd" {
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_etcd.yml"
   }
 }
+
+resource "null_resource" "ansible_control_plane" {
+  depends_on = [null_resource.ansible_etcd]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_control_plane.yml"
+  }
+}
