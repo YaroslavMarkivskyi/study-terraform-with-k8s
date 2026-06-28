@@ -1,0 +1,46 @@
+---
+- name: Configure kubectl for Remote Access
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+
+  tasks:
+    - name: Configure kubectl for admin user
+      shell: |
+        set -e
+        kubectl config set-cluster kubernetes-the-hard-way \
+          --certificate-authority={{ k8s_dir }}/ca.crt \
+          --embed-certs=true \
+          --server=https://server.kubernetes.local:6443
+
+        kubectl config set-credentials admin \
+          --client-certificate={{ k8s_dir }}/admin.crt \
+          --client-key={{ k8s_dir }}/admin.key
+
+        kubectl config set-context kubernetes-the-hard-way \
+          --cluster=kubernetes-the-hard-way \
+          --user=admin
+
+        kubectl config use-context kubernetes-the-hard-way
+      args:
+        executable: /bin/bash
+        creates: /root/.kube/config
+
+    - name: Verify cluster version
+      command: kubectl version
+      register: kubectl_version
+      changed_when: false
+
+    - name: Print cluster version
+      debug:
+        msg: "{{ kubectl_version.stdout }}"
+
+    - name: Verify nodes
+      command: kubectl get nodes
+      register: kubectl_nodes
+      changed_when: false
+
+    - name: Print nodes
+      debug:
+        msg: "{{ kubectl_nodes.stdout }}"

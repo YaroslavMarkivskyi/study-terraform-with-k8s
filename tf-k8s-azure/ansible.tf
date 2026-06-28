@@ -148,3 +148,16 @@ resource "null_resource" "ansible_workers" {
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_workers.yml"
   }
 }
+
+resource "null_resource" "ansible_kubectl" {
+  depends_on = [null_resource.ansible_workers]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/configure_kubectl.yml"
+  }
+}
