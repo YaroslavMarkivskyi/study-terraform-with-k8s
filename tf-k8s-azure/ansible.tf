@@ -102,3 +102,16 @@ resource "null_resource" "ansible_encryption" {
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/generate_encryption.yml"
   }
 }
+
+resource "null_resource" "ansible_etcd" {
+  depends_on = [null_resource.ansible_encryption]
+
+  triggers = {
+    vm_id = azurerm_linux_virtual_machine.jumpbox.id
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_etcd.yml"
+  }
+}

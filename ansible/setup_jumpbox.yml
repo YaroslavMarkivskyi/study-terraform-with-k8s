@@ -4,13 +4,6 @@
   become: true
   gather_facts: true
 
-  vars:
-    k8s_version: "v1.30.0"
-    etcd_version: "v3.5.13"
-    containerd_version: "1.7.15"
-    cni_version: "v1.4.1"
-    cfssl_version: "1.6.1"
-
   tasks:
     - name: Update apt cache and install baseline packages
       apt:
@@ -23,12 +16,6 @@
           - git
         state: present
 
-    - name: Create working directory for Kubernetes files
-      file:
-        path: /root/kubernetes-the-hard-way
-        state: directory
-        mode: '0755'
-
     - name: Clone kubernetes-the-hard-way repository
       git:
         repo: 'https://github.com/kelseyhightower/kubernetes-the-hard-way.git'
@@ -36,61 +23,41 @@
         depth: 1
         force: yes
 
-    - name: Create downloads directory
-      file:
-        path: /root/kubernetes-the-hard-way/downloads
-        state: directory
-        mode: '0755'
+    - name: Download, extract and organize binaries
+      shell: |
+        set -e
+        ARCH=$(dpkg --print-architecture)
+        wget -q --show-progress --https-only --timestamping \
+          -P downloads -i downloads-${ARCH}.txt
+        mkdir -p downloads/client downloads/cni-plugins downloads/controller downloads/worker
+        tar -xf downloads/crictl-v1.32.0-linux-${ARCH}.tar.gz -C downloads/worker/
+        tar -xf downloads/containerd-2.1.0-beta.0-linux-${ARCH}.tar.gz --strip-components 1 -C downloads/worker/
+        tar -xf downloads/cni-plugins-linux-${ARCH}-v1.6.2.tgz -C downloads/cni-plugins/
+        tar -xf downloads/etcd-v3.6.0-rc.3-linux-${ARCH}.tar.gz -C downloads/ --strip-components 1 \
+          etcd-v3.6.0-rc.3-linux-${ARCH}/etcdctl \
+          etcd-v3.6.0-rc.3-linux-${ARCH}/etcd
+        mv downloads/etcdctl downloads/client/
+        mv downloads/kubectl downloads/client/
+        mv downloads/etcd downloads/controller/
+        mv downloads/kube-apiserver downloads/controller/
+        mv downloads/kube-controller-manager downloads/controller/
+        mv downloads/kube-scheduler downloads/controller/
+        mv downloads/kubelet downloads/worker/
+        mv downloads/kube-proxy downloads/worker/
+        mv downloads/runc.${ARCH} downloads/worker/runc
+        rm -f downloads/*.tar.gz downloads/*.tgz downloads/*.gz
+        find downloads/client downloads/cni-plugins downloads/controller downloads/worker -type f -exec chmod +x {} \;
+      args:
+        chdir: /root/kubernetes-the-hard-way
+        executable: /bin/bash
+        creates: /root/kubernetes-the-hard-way/downloads/controller/etcd
 
-    - name: Download Kubernetes components directly
-      get_url:
-        url: "{{ item }}"
-        dest: /root/kubernetes-the-hard-way/downloads/
-        mode: '0755'
-      loop:
-        - "https://github.com/cloudflare/cfssl/releases/download/v{{ cfssl_version }}/cfssl_{{ cfssl_version }}_linux_amd64"
-        - "https://github.com/cloudflare/cfssl/releases/download/v{{ cfssl_version }}/cfssljson_{{ cfssl_version }}_linux_amd64"
-
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-apiserver"
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-controller-manager"
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-scheduler"
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kubectl"
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kubelet"
-        - "https://dl.k8s.io/{{ k8s_version }}/bin/linux/amd64/kube-proxy"
-
-    - name: Rename and Move CFSSL binaries to /usr/local/bin
+    - name: Install kubectl
       copy:
-        src: "/root/kubernetes-the-hard-way/downloads/cfssl_{{ cfssl_version }}_linux_amd64"
-        dest: /usr/local/bin/cfssl
-        mode: '0755'
-        remote_src: yes
-
-    - name: Rename and Move CFSSLJSON binaries to /usr/local/bin
-      copy:
-        src: "/root/kubernetes-the-hard-way/downloads/cfssljson_{{ cfssl_version }}_linux_amd64"
-        dest: /usr/local/bin/cfssljson
-        mode: '0755'
-        remote_src: yes
-
-    - name: Install kubectl to /usr/local/bin
-      copy:
-        src: /root/kubernetes-the-hard-way/downloads/kubectl
+        src: /root/kubernetes-the-hard-way/downloads/client/kubectl
         dest: /usr/local/bin/kubectl
         mode: '0755'
         remote_src: yes
-
-    - name: Verify tools installation
-      command: "{{ item }}"
-      loop:
-        - "cfssl version"
-        - "kubectl version --client"
-      register: tools_version
-      changed_when: false
-
-    - name: Print tools version
-      debug:
-        msg: "{{ item.stdout_lines[0] if item.stdout_lines else item.stderr_lines[0] }}"
-      loop: "{{ tools_version.results }}"
 
     - name: Ensure root .ssh directory exists
       file:

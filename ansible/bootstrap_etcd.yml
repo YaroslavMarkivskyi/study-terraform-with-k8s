@@ -1,0 +1,65 @@
+---
+- name: Copy etcd binaries and unit file to server
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+
+  tasks:
+    - name: Copy etcd binaries and service unit to server
+      shell: |
+        scp -o StrictHostKeyChecking=no \
+          {{ k8s_dir }}/downloads/controller/etcd \
+          {{ k8s_dir }}/downloads/client/etcdctl \
+          {{ k8s_dir }}/units/etcd.service \
+          root@server:~/
+
+- name: Bootstrap etcd on server
+  hosts: server
+  become: true
+
+  tasks:
+    - name: Install etcd binaries
+      shell: mv /root/etcd /root/etcdctl /usr/local/bin/
+      args:
+        creates: /usr/local/bin/etcd
+
+    - name: Create etcd directories
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /etc/etcd, mode: '0755' }
+        - { path: /var/lib/etcd, mode: '0700' }
+
+    - name: Copy certificates to etcd directory
+      copy:
+        src: "/root/{{ item }}"
+        dest: "/etc/etcd/{{ item }}"
+        remote_src: yes
+      loop:
+        - ca.crt
+        - kube-api-server.key
+        - kube-api-server.crt
+
+    - name: Install etcd systemd unit
+      shell: mv /root/etcd.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/etcd.service
+
+    - name: Enable and start etcd
+      systemd:
+        name: etcd
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Verify etcd cluster members
+      command: etcdctl member list
+      register: etcd_members
+      changed_when: false
+
+    - name: Print etcd members
+      debug:
+        msg: "{{ etcd_members.stdout }}"
