@@ -1,0 +1,43 @@
+---
+- name: Configure Pod Network Routes
+  hosts: nodes
+  become: true
+
+  tasks:
+    - name: Add pod network routes
+      command: ip route replace {{ hostvars[item]['pod_subnet'] }} via {{ hostvars[item]['ansible_host'] }}
+      loop: "{{ groups['workers'] }}"
+      when:
+        - hostvars[item]['pod_subnet'] is defined
+        - item != inventory_hostname
+      changed_when: true
+
+    - name: Persist routes via rc.local
+      lineinfile:
+        path: /etc/rc.local
+        line: "ip route replace {{ hostvars[item]['pod_subnet'] }} via {{ hostvars[item]['ansible_host'] }}"
+        insertbefore: "^exit 0"
+        create: yes
+        mode: '0755'
+      loop: "{{ groups['workers'] }}"
+      when:
+        - hostvars[item]['pod_subnet'] is defined
+        - item != inventory_hostname
+
+    - name: Ensure rc.local has shebang and exit 0
+      blockinfile:
+        path: /etc/rc.local
+        insertbefore: BOF
+        block: "#!/bin/bash"
+        marker: ""
+        create: yes
+        mode: '0755'
+
+    - name: Verify routes
+      command: ip route
+      register: ip_routes
+      changed_when: false
+
+    - name: Print routes
+      debug:
+        msg: "Routes on {{ inventory_hostname }}: {{ ip_routes.stdout }}"

@@ -25,8 +25,11 @@ resource "local_file" "ansible_inventory" {
     %{~ endfor }
 
     [workers]
-    node-0
-    node-1
+    %{~ for name, node in var.internal_nodes ~}
+    %{~ if node.pod_subnet != "" ~}
+    ${name} pod_subnet=${node.pod_subnet}
+    %{~ endif ~}
+    %{~ endfor ~}
 
     [server]
     server
@@ -159,5 +162,18 @@ resource "null_resource" "ansible_kubectl" {
   provisioner "local-exec" {
     working_dir = path.module
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/configure_kubectl.yml"
+  }
+}
+
+resource "null_resource" "ansible_routes" {
+  depends_on = [null_resource.ansible_kubectl]
+
+  triggers = {
+    node_ids = join(",", [for vm in azurerm_linux_virtual_machine.nodes : vm.id])
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/configure_routes.yml"
   }
 }
