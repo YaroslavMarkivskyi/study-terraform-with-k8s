@@ -1,0 +1,182 @@
+---
+- name: Copy worker binaries and configs to nodes
+  hosts: jumpbox
+  become: true
+  vars:
+    k8s_dir: /root/kubernetes-the-hard-way
+
+  tasks:
+    - name: Generate per-node configs and copy to each worker
+      shell: |
+        SUBNET=$(grep {{ item }} {{ k8s_dir }}/machines.txt | cut -d " " -f 4)
+        sed "s|SUBNET|$SUBNET|g" {{ k8s_dir }}/configs/10-bridge.conf > /tmp/10-bridge-{{ item }}.conf
+        sed "s|SUBNET|$SUBNET|g" {{ k8s_dir }}/configs/kubelet-config.yaml > /tmp/kubelet-config-{{ item }}.yaml
+        scp -o StrictHostKeyChecking=no \
+          /tmp/10-bridge-{{ item }}.conf root@{{ item }}:~/10-bridge.conf
+        scp -o StrictHostKeyChecking=no \
+          /tmp/kubelet-config-{{ item }}.yaml root@{{ item }}:~/kubelet-config.yaml
+      loop:
+        - node-0
+        - node-1
+
+    - name: Copy worker binaries and shared configs to each node
+      shell: |
+        scp -o StrictHostKeyChecking=no \
+          {{ k8s_dir }}/downloads/worker/* \
+          {{ k8s_dir }}/downloads/client/kubectl \
+          {{ k8s_dir }}/configs/99-loopback.conf \
+          {{ k8s_dir }}/configs/containerd-config.toml \
+          {{ k8s_dir }}/configs/kube-proxy-config.yaml \
+          {{ k8s_dir }}/units/containerd.service \
+          {{ k8s_dir }}/units/kubelet.service \
+          {{ k8s_dir }}/units/kube-proxy.service \
+          root@{{ item }}:~/
+      loop:
+        - node-0
+        - node-1
+
+    - name: Create cni-plugins directory on each node and copy plugins
+      shell: |
+        ssh -o StrictHostKeyChecking=no root@{{ item }} mkdir -p ~/cni-plugins
+        scp -o StrictHostKeyChecking=no \
+          {{ k8s_dir }}/downloads/cni-plugins/* \
+          root@{{ item }}:~/cni-plugins/
+      loop:
+        - node-0
+        - node-1
+
+- name: Bootstrap Kubernetes Worker Nodes
+  hosts: workers
+  become: true
+
+  tasks:
+    - name: Install OS dependencies
+      apt:
+        update_cache: yes
+        name:
+          - socat
+          - conntrack
+          - ipset
+          - kmod
+        state: present
+
+    - name: Disable swap
+      command: swapoff -a
+      changed_when: false
+
+    - name: Create installation directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/cni/net.d
+        - /opt/cni/bin
+        - /var/lib/kubelet
+        - /var/lib/kube-proxy
+        - /var/lib/kubernetes
+        - /var/run/kubernetes
+        - /etc/containerd
+
+    - name: Install worker binaries to /usr/local/bin
+      shell: mv /root/crictl /root/kube-proxy /root/kubelet /root/runc /usr/local/bin/
+      args:
+        creates: /usr/local/bin/kubelet
+
+    - name: Install kubectl to /usr/local/bin
+      shell: mv /root/kubectl /usr/local/bin/
+      args:
+        creates: /usr/local/bin/kubectl
+
+    - name: Install containerd binaries to /bin
+      shell: mv /root/containerd /root/containerd-shim-runc-v2 /root/containerd-stress /bin/
+      args:
+        creates: /bin/containerd
+
+    - name: Install CNI plugins to /opt/cni/bin
+      shell: mv /root/cni-plugins/* /opt/cni/bin/
+      args:
+        creates: /opt/cni/bin/bridge
+
+    - name: Configure CNI bridge network
+      shell: mv /root/10-bridge.conf /root/99-loopback.conf /etc/cni/net.d/
+      args:
+        creates: /etc/cni/net.d/10-bridge.conf
+
+    - name: Load br-netfilter kernel module
+      modprobe:
+        name: br-netfilter
+        state: present
+
+    - name: Persist br-netfilter module
+      lineinfile:
+        path: /etc/modules-load.d/modules.conf
+        line: br-netfilter
+        create: yes
+
+    - name: Configure sysctl for bridge networking
+      sysctl:
+        name: "{{ item }}"
+        value: '1'
+        sysctl_file: /etc/sysctl.d/kubernetes.conf
+        reload: yes
+      loop:
+        - net.bridge.bridge-nf-call-iptables
+        - net.bridge.bridge-nf-call-ip6tables
+
+    - name: Install containerd config
+      shell: mv /root/containerd-config.toml /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Install containerd systemd unit
+      shell: mv /root/containerd.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/containerd.service
+
+    - name: Install kubelet config
+      shell: mv /root/kubelet-config.yaml /var/lib/kubelet/
+      args:
+        creates: /var/lib/kubelet/kubelet-config.yaml
+
+    - name: Install kubelet systemd unit
+      shell: mv /root/kubelet.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/kubelet.service
+
+    - name: Set kubelet hostname-override
+      lineinfile:
+        path: /etc/systemd/system/kubelet.service
+        insertbefore: '  --v=2'
+        line: '  --hostname-override={{ inventory_hostname }} \'
+        regexp: '--hostname-override='
+
+    - name: Install kube-proxy config
+      shell: mv /root/kube-proxy-config.yaml /var/lib/kube-proxy/
+      args:
+        creates: /var/lib/kube-proxy/kube-proxy-config.yaml
+
+    - name: Install kube-proxy systemd unit
+      shell: mv /root/kube-proxy.service /etc/systemd/system/
+      args:
+        creates: /etc/systemd/system/kube-proxy.service
+
+    - name: Enable and start worker services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      loop:
+        - containerd
+        - kubelet
+        - kube-proxy
+
+    - name: Verify kubelet is active
+      command: systemctl is-active kubelet
+      register: kubelet_status
+      changed_when: false
+
+    - name: Print kubelet status
+      debug:
+        msg: "kubelet on {{ inventory_hostname }}: {{ kubelet_status.stdout }}"

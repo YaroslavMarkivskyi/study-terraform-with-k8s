@@ -23,6 +23,13 @@ resource "local_file" "ansible_inventory" {
     %{~ for name, node in var.internal_nodes }
     ${name} ansible_host=${node.ip} ansible_user=${var.admin_username} ansible_ssh_private_key_file=../tf-k8s-azure/k8s_id_rsa ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand="ssh -W %h:%p -i ../tf-k8s-azure/k8s_id_rsa -o StrictHostKeyChecking=no ${var.admin_username}@${azurerm_public_ip.jumpbox_pip.ip_address}"'
     %{~ endfor }
+
+    [workers]
+    node-0
+    node-1
+
+    [server]
+    server
     EOT
   filename = "${path.module}/../ansible/hosts.ini"
 }
@@ -126,5 +133,18 @@ resource "null_resource" "ansible_control_plane" {
   provisioner "local-exec" {
     working_dir = path.module
     command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_control_plane.yml"
+  }
+}
+
+resource "null_resource" "ansible_workers" {
+  depends_on = [null_resource.ansible_control_plane]
+
+  triggers = {
+    node_ids = join(",", [for vm in azurerm_linux_virtual_machine.nodes : vm.id])
+  }
+
+  provisioner "local-exec" {
+    working_dir = path.module
+    command     = "ansible-playbook -i ../ansible/hosts.ini ../ansible/bootstrap_workers.yml"
   }
 }

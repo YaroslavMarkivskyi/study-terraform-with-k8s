@@ -23,12 +23,21 @@
         depth: 1
         force: yes
 
-    - name: Download, extract and organize binaries
+    - name: Download all binaries
       shell: |
         set -e
         ARCH=$(dpkg --print-architecture)
         wget -q --show-progress --https-only --timestamping \
           -P downloads -i downloads-${ARCH}.txt
+      args:
+        chdir: /root/kubernetes-the-hard-way
+        executable: /bin/bash
+        creates: /root/kubernetes-the-hard-way/downloads/kubectl
+
+    - name: Extract and organize binaries
+      shell: |
+        set -e
+        ARCH=$(dpkg --print-architecture)
         mkdir -p downloads/client downloads/cni-plugins downloads/controller downloads/worker
         tar -xf downloads/crictl-v1.32.0-linux-${ARCH}.tar.gz -C downloads/worker/
         tar -xf downloads/containerd-2.1.0-beta.0-linux-${ARCH}.tar.gz --strip-components 1 -C downloads/worker/
@@ -45,12 +54,11 @@
         mv downloads/kubelet downloads/worker/
         mv downloads/kube-proxy downloads/worker/
         mv downloads/runc.${ARCH} downloads/worker/runc
-        rm -f downloads/*.tar.gz downloads/*.tgz downloads/*.gz
         find downloads/client downloads/cni-plugins downloads/controller downloads/worker -type f -exec chmod +x {} \;
       args:
         chdir: /root/kubernetes-the-hard-way
         executable: /bin/bash
-        creates: /root/kubernetes-the-hard-way/downloads/controller/etcd
+        creates: /root/kubernetes-the-hard-way/downloads/cni-plugins/bridge
 
     - name: Install kubectl
       copy:
